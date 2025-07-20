@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RLT-Rechner (Analyse-Version)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🌬️ RLT-Rechner (Analyse-Version)</h1>
+        <p class="subtitle">Analyse von Anlagenprozessen und Luftzuständen</p>
+    </header>
+
+    <main>
+        <div class="card">
+            <div class="card-header">
+                <h2>Anlagenkonfiguration</h2>
+                <button id="resetBtn" title="Alle Werte auf Standard zurücksetzen">⟲ Reset</button>
+            </div>
+            <div class="main-config-section">
+                <div class="grid-container" style="gap: 1rem 2rem;">
+                    <div>
+                        <h4>Betriebsmodus</h4>
+                        <div class="radio-group">
+                            <label><input type="radio" name="betriebsmodus" value="heizen">Nur Heizen</label>
+                            <label><input type="radio" name="betriebsmodus" value="kuehlen_sensibel">Kühlen (sensibel)</label>
+                            <label><input type="radio" name="betriebsmodus" value="entfeuchten" checked>Kühlen & Entfeuchten</label>
+                        </div>
+                    </div>
+                    <div>
+                        <h4>Heizkonzept</h4>
+                        <div class="radio-group">
+                            <label><input type="radio" name="heizkonzept" value="standard" checked>Standard (NE Haupterhitzer)</label>
+                            <label><input type="radio" name="heizkonzept" value="ve_hauptleistung">VE als Haupterhitzer</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <hr>
+            <div class="grid-container config-grid">
+                <div>
+                    <h4>🌍 Außenluft</h4>
+                    <div class="input-group">
+                        <label for="tempAussen">Temperatur (°C)</label>
+                        <input type="number" id="tempAussen" value="20.0" step="0.1">
+                    </div>
+                    <div class="input-group">
+                        <label for="rhAussen">Relative Feuchte (%)</label>
+                        <input type="number" id="rhAussen" value="50.0" step="0.1" min="0" max="100">
+                    </div>
+                </div>
+
+                <div>
+                    <h4>💨 Zuluft (Sollwert)</h4>
+                    <div class="input-group">
+                        <label for="tempZuluft">Temperatur (°C)</label>
+                        <input type="number" id="tempZuluft" value="20.0" step="0.1">
+                    </div>
+                    <div class="input-group" id="sollFeuchteWrapper">
+                        <label for="rhZuluft">Relative Feuchte (%)</label>
+                        <input type="number" id="rhZuluft" value="60.0" step="0.1" min="0" max="100">
+                    </div>
+                </div>
+
+                <div>
+                    <h4>🔧 Anlagenparameter</h4>
+                    <div class="input-group">
+                        <label for="volumenstrom">Luft-Volumenstrom (m³/h)</label>
+                        <input type="number" id="volumenstrom" value="5000" step="50" min="0">
+                    </div>
+                    <div class="input-group">
+                        <label for="druck">Luftdruck (hPa)</label>
+                        <input type="number" id="druck" value="1013.25" step="0.1">
+                    </div>
+                    <div class="input-group" id="veZielTempWrapper">
+                        <label for="tempVEZiel">VE Ziel-Temperatur (°C)</label>
+                        <input type="number" id="tempVEZiel" value="5.0" step="0.1">
+                    </div>
+                </div>
+            </div>
+            <hr>
+            <div class="grid-container water-temp-grid">
+                 <div class="input-group-inline">
+                      <label>Heizwasser T (°C V/R)</label>
+                      <div>
+                          <input type="number" id="tempHeizVorlauf" value="70" step="1">
+                          <input type="number" id="tempHeizRuecklauf" value="50" step="1">
+                      </div>
+                 </div>
+                <div class="input-group-inline" id="kuehlwasserWrapper">
+                    <label>Kühlwasser T (°C V/R)</label>
+                    <div>
+                        <input type="number" id="tempKuehlVorlauf" value="8" step="1">
+                        <input type="number" id="tempKuehlRuecklauf" value="13" step="1">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card" id="results-card">
+            <h2>Anlagenprozess & Zustände</h2>
+            <div id="process-overview-container"></div>
+            <div class="process-flow-container">
+                <div class="process-column">
+                    <div class="state-node" id="node-0"><h4>Außenluft</h4><p>T: <span id="res-t-0">--</span>°C</p><p>rH: <span id="res-rh-0">--</span>%</p><p>x: <span id="res-x-0">--</span>g/kg</p></div>
+                </div>
+                <div class="arrow">→</div>
+                <div class="process-column">
+                    <div class="component-node" id="comp-ve"><h5>Vorerhitzer</h5><p>P: <span id="res-p-ve">0,00</span> kW</p><p>💧 <span id="res-wv-ve">0,00</span> m³/h</p></div>
+                    <div class="state-node" id="node-1"><p>T: <span id="res-t-1">--</span>°C</p><p>rH: <span id="res-rh-1">--</span>%</p><p>x: <span id="res-x-1">--</span>g/kg</p></div>
+                </div>
+                <div class="arrow">→</div>
+                <div class="process-column">
+                    <div class="component-node" id="comp-k"><h5>Kühler</h5><p>P: <span id="res-p-k">0,00</span> kW</p><p>💧 <span id="res-wv-k">0,00</span> m³/h</p><p>💧❄️ <span id="res-kondensat">0,00</span> kg/h</p></div>
+                    <div class="state-node" id="node-2"><p>T: <span id="res-t-2">--</span>°C</p><p>rH: <span id="res-rh-2">--</span>%</p><p>x: <span id="res-x-2">--</span>g/kg</p></div>
+                </div>
+                <div class="arrow">→</div>
+                <div class="process-column">
+                    <div class="component-node" id="comp-ne"><h5>Nacherhitzer</h5><p>P: <span id="res-p-ne">0,00</span> kW</p><p>💧 <span id="res-wv-ne">0,00</span> m³/h</p></div>
+                    <div class="state-node" id="node-3"><p>T: <span id="res-t-3">--</span>°C</p><p>rH: <span id="res-rh-3">--</span>%</p><p>x: <span id="res-x-3">--</span>g/kg</p></div>
+                </div>
+                 <div class="arrow equals">→</div>
+                <div class="process-column">
+                     <div class="state-node final-state" id="node-final"><h4>Zuluft</h4><p>T: <span id="res-t-final">--</span>°C</p><p>rH: <span id="res-rh-final">--</span>%</p><p>x: <span id="res-x-final">--</span>g/kg</p></div>
+                </div>
+            </div>
+            <hr>
+            <h3>Zusammenfassung & Vergleich</h3>
+            <div class="summary-grid">
+                <div class="power-summary">
+                    <h4>Gesamtleistungen</h4>
+                    <p><span>Gesamtleistung Wärme:</span> <strong id="summary-power-heat" class="power-heat">0,00 kW</strong></p>
+                    <p><span>Gesamtleistung Kälte:</span> <strong id="summary-power-cool" class="power-cool">0,00 kW</strong></p>
+                </div>
+                <table class="summary-table">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>🌍 Außenluft</th>
+                            <th>✅ Zuluft</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Temperatur</td>
+                            <td id="summary-t-aussen">-- °C</td>
+                            <td id="summary-t-zuluft">-- °C</td>
+                        </tr>
+                        <tr>
+                            <td>Relative Feuchte</td>
+                            <td id="summary-rh-aussen">-- %</td>
+                            <td id="summary-rh-zuluft">-- %</td>
+                        </tr>
+                        <tr>
+                            <td>Absolute Feuchte</td>
+                            <td id="summary-x-aussen">-- g/kg</td>
+                            <td id="summary-x-zuluft">-- g/kg</td>
+                        </tr>
+                        <tr>
+                            <td>Enthalpie</td>
+                            <td id="summary-h-aussen">-- kJ/kg</td>
+                            <td id="summary-h-zuluft">-- kJ/kg</td>
+                        </tr>
+                        <tr>
+                            <td>Taupunkttemperatur</td>
+                            <td id="summary-td-aussen">-- °C</td>
+                            <td id="summary-td-zuluft">-- °C</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <details class="info-box">
+            <summary>Über diesen Rechner & Berechnungsgrundlagen</summary>
+            <div class="info-content">
+                <p>Dieser Rechner dient der Simulation und Analyse grundlegender thermodynamischer Prozesse in raumlufttechnischen (RLT) Anlagen. Er richtet sich an Techniker, Ingenieure, Planer und Auszubildende der Versorgungs- und Gebäudetechnik.</p>
+                <h4>Verwendete Berechnungsgrundlagen:</h4>
+                <ul>
+                    <li><strong>Sättigungsdampfdruck:</strong> Berechnung nach der <strong>Magnus-Formel</strong>, eine etablierte Näherungsformel in der Meteorologie und Technik.</li>
+                    <li><strong>Absolute Feuchte & Enthalpie:</strong> Berechnung nach den international anerkannten Standardformeln der Thermodynamik für feuchte Luft.</li>
+                    <li><strong>Prozessabbildung:</strong> Die Simulation der Anlagenkomponenten (Erhitzer, Kühler) erfolgt über Energiebilanzen basierend auf der Enthalpiedifferenz der Luftzustände.</li>
+                </ul>
+                <p>Der Rechner dient als Werkzeug zur Veranschaulichung und für schnelle Überschlagsrechnungen. Er ersetzt keine detaillierte, normgerechte Anlagenauslegung.</p>
+            </div>
+        </details>
+
+    </main>
+    <footer class="footer"><p>RLT-Rechner (Analyse-Version) | Erstellt mit Gemini</p></footer>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
