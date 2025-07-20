@@ -41,7 +41,7 @@ function toggleUI() {
     veZielTempWrapper.querySelector('label').textContent = (heizkonzept === 'standard') ? 'VE Frostschutz-Zieltemp. (°C)' : 'VE Ziel-Temperatur (°C)';
 }
 
-// --- Psychrometrische Hilfsfunktionen (unverändert) ---
+// --- Psychrometrische Hilfsfunktionen ---
 const getSVP = (T) => 6.112 * Math.exp((17.62 * T) / (243.12 + T));
 const getAbsFeuchte = (T, rh, p) => 622 * (rh / 100 * getSVP(T)) / (p - (rh / 100 * getSVP(T)));
 const getRelFeuchte = (T, x, p) => {
@@ -71,10 +71,12 @@ const createZustand = (T, rh, x_val, p) => {
     return zustand;
 };
 
+
 // ###############################################################
-// ################ FINALE BERECHNUNGSLOGIK ######################
+// ################ NEU STRUKTURIERTE BERECHNUNGSLOGIK #############
 // ###############################################################
 function calculate() {
+    // 1. Inputs einlesen
     const inputs = {
         betriebsmodus: document.querySelector('input[name="betriebsmodus"]:checked').value,
         heizkonzept: document.querySelector('input[name="heizkonzept"]:checked').value,
@@ -94,64 +96,69 @@ function calculate() {
     const massenstrom = (inputs.volumenstrom * 1.2) / 3600;
     let p_ve = 0, p_k = 0, p_ne = 0, kondensat = 0, t_kuehl_ziel = 0;
 
+    // 2. Grundzustände und Entscheidungskriterien berechnen
     const zustand0 = createZustand(inputs.tAussen, inputs.rhAussen, null, inputs.druck);
-
-    // KORREKTUR: Die intelligente Prüfung, ob Entfeuchtung wirklich notwendig ist.
     const rh_nach_nur_heizen = getRelFeuchte(inputs.tZuluft, zustand0.x, inputs.druck);
-    const entfeuchtungWirklichNotwendig = 
-        (inputs.betriebsmodus === 'entfeuchten') && 
-        (rh_nach_nur_heizen > inputs.rhZuluft + 0.5); // +0.5 als Toleranz
 
-    const kuehlungSensibelNotwendig = 
-        (inputs.betriebsmodus === 'kuehlen_sensibel') && 
-        (zustand0.T > inputs.tZuluft + 0.01);
+    // 3. Prozesspfad basierend auf intelligenter Logik bestimmen
+    const mussEntfeuchtetWerden = (inputs.betriebsmodus === 'entfeuchten') && (rh_nach_nur_heizen > inputs.rhZuluft + 0.5);
+    const mussSensibelGekuehltWerden = (inputs.betriebsmodus === 'kuehlen_sensibel') && (zustand0.T > inputs.tZuluft + 0.01);
+    const mussGeheiztWerden = zustand0.T < inputs.tZuluft - 0.01;
 
-    // Initialisiere alle Zustände mit dem vorhergehenden Zustand
+    // Zustände initialisieren
     let zustand1 = { ...zustand0 };
     let zustand2 = { ...zustand1 };
     let zustand3 = { ...zustand2 };
 
-    // ### VORERHITZER (VE) ###
-    let veAktiv = false;
-    if (inputs.heizkonzept === 'standard') {
-        if (zustand0.T < inputs.tVEZiel - 0.01) veAktiv = true;
-    } else { // ve_hauptleistung
-        // VE als Haupterhitzer läuft nur, wenn KEINE Kühlung/Entfeuchtung nötig ist
-        if (!entfeuchtungWirklichNotwendig && !kuehlungSensibelNotwendig && inputs.tZuluft > zustand0.T + 0.01) veAktiv = true;
-    }
-    
-    if (veAktiv) {
-        const zielTempVE = (inputs.heizkonzept === 'standard') ? inputs.tVEZiel : inputs.tZuluft;
-        zustand1 = createZustand(zielTempVE, null, zustand0.x, inputs.druck);
-        p_ve = massenstrom * (zustand1.h - zustand0.h);
-    }
-    
-    zustand2 = { ...zustand1 };
-
-    // ### KÜHLER (K) ###
-    if (entfeuchtungWirklichNotwendig || kuehlungSensibelNotwendig) {
-        t_kuehl_ziel = entfeuchtungWirklichNotwendig ? getTaupunkt(inputs.tZuluft, inputs.rhZuluft) : inputs.tZuluft;
-        const x_soll_zuluft = entfeuchtungWirklichNotwendig ? getAbsFeuchte(inputs.tZuluft, inputs.rhZuluft, inputs.druck) : zustand1.x;
-        
-        if (zustand1.T > t_kuehl_ziel - 0.01) {
-            zustand2 = createZustand(t_kuehl_ziel, 100, x_soll_zuluft, inputs.druck);
-            p_k = massenstrom * (zustand2.h - zustand1.h);
-            kondensat = massenstrom * (Math.max(0, zustand1.x - zustand2.x)) * 3.6;
+    if (mussEntfeuchtetWerden) {
+        // --- PFAD A: ENTFEUCHTUNG (Kühlen + Nacherwärmen) ---
+        // VE nur für Frostschutz
+        if (zustand0.T < inputs.tVEZiel - 0.01) {
+            zustand1 = createZustand(inputs.tVEZiel, null, zustand0.x, inputs.druck);
+            p_ve = massenstrom * (zustand1.h - zustand0.h);
         }
-    }
+        zustand2 = { ...zustand1 };
+        // Kühler
+        t_kuehl_ziel = getTaupunkt(inputs.tZuluft, inputs.rhZuluft);
+        const x_soll_zuluft = getAbsFeuchte(inputs.tZuluft, inputs.rhZuluft, inputs.druck);
+        zustand2 = createZustand(t_kuehl_ziel, 100, x_soll_zuluft, inputs.druck);
+        p_k = massenstrom * (zustand2.h - zustand1.h);
+        kondensat = massenstrom * (Math.max(0, zustand1.x - zustand2.x)) * 3.6;
+        // Nacherhitzer
+        zustand3 = { ...zustand2 };
+        if (zustand2.T < inputs.tZuluft - 0.01) {
+             zustand3 = createZustand(inputs.tZuluft, null, zustand2.x, inputs.druck);
+             p_ne = massenstrom * (zustand3.h - zustand2.h);
+        }
 
-    zustand3 = { ...zustand2 };
-    
-    // ### NACHERHITZER (NE) ###
-    if (zustand2.T < inputs.tZuluft - 0.01) {
-        // Im VE-Hauptleistungs-Modus darf der NE nur laufen, wenn vorher gekühlt wurde (p_k < 0)
-        const neDarfLaufen = (inputs.heizkonzept === 've_hauptleistung') ? (p_k < -0.01) : true;
-        if (neDarfLaufen) {
+    } else if (mussSensibelGekuehltWerden) {
+        // --- PFAD B: SENSIBLES KÜHLEN ---
+        zustand2 = createZustand(inputs.tZuluft, null, zustand0.x, inputs.druck);
+        p_k = massenstrom * (zustand2.h - zustand0.h);
+        zustand1 = { ...zustand0 };
+        zustand3 = { ...zustand2 };
+
+    } else if (mussGeheiztWerden) {
+        // --- PFAD C: HEIZEN ---
+        if (inputs.heizkonzept === 'standard') {
+            // VE für Frostschutz, NE ist Haupterhitzer
+            if (zustand0.T < inputs.tVEZiel - 0.01) {
+                zustand1 = createZustand(inputs.tVEZiel, null, zustand0.x, inputs.druck);
+                p_ve = massenstrom * (zustand1.h - zustand0.h);
+            }
+            zustand2 = { ...zustand1 };
             zustand3 = createZustand(inputs.tZuluft, null, zustand2.x, inputs.druck);
             p_ne = massenstrom * (zustand3.h - zustand2.h);
+        } else { // ve_hauptleistung
+            // VE ist Haupterhitzer
+            zustand1 = createZustand(inputs.tZuluft, null, zustand0.x, inputs.druck);
+            p_ve = massenstrom * (zustand1.h - zustand0.h);
+            zustand2 = { ...zustand1 };
+            zustand3 = { ...zustand1 };
         }
     }
     
+    // 4. Wasserströme berechnen und UI aktualisieren
     const allStates = [zustand0, zustand1, zustand2, zustand3];
     const finalPowers = { p_ve, p_k, p_ne, kondensat, t_kuehl_ziel };
 
@@ -163,10 +170,8 @@ function calculate() {
     updateUI(allStates, finalPowers, inputs);
 }
 
-// Die Funktionen updateUI und updateProcessVisuals sind korrekt und unverändert
 function updateUI(states, powers, inputs) {
     const f = (val, dec) => val.toFixed(dec);
-
     states.forEach((state, i) => {
         if(document.getElementById(`res-t-${i}`)){
             document.getElementById(`res-t-${i}`).textContent = f(state.T, 1);
@@ -197,7 +202,6 @@ function updateUI(states, powers, inputs) {
         const stateKey = paramMapping[paramKey];
         const unit = {'t':'°C', 'rh':'%', 'x':'g/kg', 'h':'kJ/kg', 'td':'°C'}[paramKey];
         const dec = (paramKey === 't' || paramKey === 'rh' || paramKey === 'td') ? 1 : 2;
-        
         document.getElementById(`summary-${paramKey}-aussen`).textContent = `${f(states[0][stateKey], dec)} ${unit}`;
         document.getElementById(`summary-${paramKey}-zuluft`).textContent = `${f(finalState[stateKey], dec)} ${unit}`;
     });
@@ -219,10 +223,10 @@ function updateProcessVisuals(states, powers, inputs) {
     
     let warningText = '';
     if (isCooling && isDehumidifying && powers.t_kuehl_ziel < inputs.tKuehlV) {
-        warningText += `<br><strong>Achtung:</strong> Die Kühlwasser-Vorlauftemperatur (${inputs.tKuehlV}°C) ist zu hoch, um den benötigten Taupunkt von ${powers.t_kuehl_ziel.toFixed(1)}°C zu erreichen.`;
+        warningText += `<br><strong>Achtung:</strong> Kühlwasser-VL (${inputs.tKuehlV}°C) ist zu hoch, um Taupunkt von ${powers.t_kuehl_ziel.toFixed(1)}°C zu erreichen.`;
     }
     if (isHeating && (inputs.tHeizV - inputs.tZuluft < 10) && (states[0].T < 0)) {
-        warningText += `<br><strong>Hinweis:</strong> Die Heizwasser-Vorlauftemperatur (${inputs.tHeizV}°C) ist für den großen Temperaturhub eventuell zu niedrig.`;
+        warningText += `<br><strong>Hinweis:</strong> Heizwasser-VL (${inputs.tHeizV}°C) ist für den großen Temperaturhub eventuell zu niedrig.`;
     }
 
     const overview = document.createElement('div');
