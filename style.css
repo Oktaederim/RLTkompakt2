@@ -106,7 +106,6 @@ hr { border: none; border-top: 1px solid var(--border-color); margin: 1.5rem 0; 
 .power-heat { color: var(--danger-color); }
 .power-cool { color: var(--primary-color); }
 
-/* NEU: Stile für das Info-Klappfenster */
 .info-box {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
